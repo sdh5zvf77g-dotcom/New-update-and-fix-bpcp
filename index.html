@@ -1277,10 +1277,84 @@ function show(v) {
   if (typeof applyCurrency === 'function') applyCurrency();
 }
 function openMoreMenu() { show('more'); }
+/**
+ * Approximate units of each currency per 1 USD (offline rates).
+ * Tuned so ~4500 THB ≈ 101 GBP (example conversion).
+ */
+const FX_PER_USD = {
+  USD: 1,
+  EUR: 0.92,
+  GBP: 0.79,
+  THB: 35.15,
+  AUD: 1.52,
+  CAD: 1.36,
+  JPY: 149,
+  CNY: 7.2,
+  SGD: 1.34,
+  MYR: 4.45,
+  IDR: 15800,
+  PHP: 56,
+  INR: 83,
+  NZD: 1.64,
+  CHF: 0.88,
+  SEK: 10.5,
+  NOK: 10.6,
+  DKK: 6.9,
+  HKD: 7.8,
+  ZAR: 18.2
+};
+
+function convertCurrency(amount, from, to) {
+  const n = Number(amount);
+  if (!Number.isFinite(n)) return 0;
+  const a = String(from || 'USD').toUpperCase();
+  const b = String(to || 'USD').toUpperCase();
+  if (a === b) return n;
+  const ra = FX_PER_USD[a] || 1;
+  const rb = FX_PER_USD[b] || 1;
+  // amount in USD, then to target
+  return (n / ra) * rb;
+}
+
 function money(v) {
   const cur = (db.settings && db.settings.currency) || 'USD';
   try { return new Intl.NumberFormat(undefined, { style: 'currency', currency: cur }).format(Number(v) || 0); }
-  catch(e) { return '$' + (Number(v)||0).toFixed(2); }
+  catch(e) { return (Number(v)||0).toFixed(2) + ' ' + cur; }
+}
+
+/** Convert every stored money field from one currency to another (mutates db) */
+function convertAllStoredMoney(from, to) {
+  if (!from || !to || from === to) return;
+  const c = (x) => convertCurrency(x, from, to);
+  const round2 = (x) => Math.round((Number(x) || 0) * 100) / 100;
+
+  (db.snakes || []).forEach(s => {
+    if (s.acquisitionCost != null && s.acquisitionCost !== '') {
+      s.acquisitionCost = round2(c(s.acquisitionCost));
+    }
+    if (s.price != null && String(s.price).trim() !== '') {
+      const raw = String(s.price);
+      const n = Number(raw.replace(/[^0-9.]/g, ''));
+      if (n > 0) {
+        // Keep pure number so future switches keep converting cleanly
+        s.price = String(round2(c(n)));
+      }
+    }
+  });
+  (db.sales || []).forEach(x => {
+    if (x.amount != null && x.amount !== '') x.amount = round2(c(x.amount));
+  });
+  (db.expenses || []).forEach(x => {
+    if (x.amount != null && x.amount !== '') x.amount = round2(c(x.amount));
+  });
+  (db.projects || []).forEach(x => {
+    if (x.budget != null && x.budget !== '') x.budget = round2(c(x.budget));
+  });
+  (db.foodStock || []).forEach(x => {
+    if (x.purchasePrice != null && x.purchasePrice !== '') x.purchasePrice = round2(c(x.purchasePrice));
+    if (x.price != null && x.price !== '') x.price = round2(c(x.price));
+    if (x.totalPrice != null && x.totalPrice !== '') x.totalPrice = round2(c(x.totalPrice));
+  });
 }
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
 function ensureArrays() {
@@ -5859,35 +5933,37 @@ function applyCurrency() {
 function setCurrency(code) {
   if (!db.settings) db.settings = { version: 1 };
   const prev = getCurrency();
-  db.settings.currency = code || 'USD';
+  const next = code || 'USD';
+  if (prev !== next) {
+    // Convert all stored amounts (snakes, sales, expenses, stock…) into the new currency
+    convertAllStoredMoney(prev, next);
+  }
+  db.settings.currency = next;
   save();
   applyCurrency();
-  // Re-render every money surface: dashboard, sales, reports, snakes list, open detail
+  // Re-render every money surface
   try {
     if (typeof dash === 'function') dash();
     if (typeof renderAnimals === 'function') renderAnimals();
     if (typeof renderSales === 'function') renderSales();
     if (typeof renderReports === 'function') renderReports();
     if (typeof renderProjects === 'function') renderProjects();
-    const detail = document.getElementById('animalDetail');
-    if (detail && detail.classList.contains('active')) {
-      const nameEl = detail.querySelector('h2');
-      // Re-open current snake if we can find id from a global or last viewed
-      if (window._lastAnimalId && typeof animalDetail === 'function') animalDetail(window._lastAnimalId);
+    if (typeof renderFoodStockDashboard === 'function') renderFoodStockDashboard();
+    if (window._lastAnimalId && typeof animalDetail === 'function'
+        && document.getElementById('animalDetail')?.classList.contains('active')) {
+      animalDetail(window._lastAnimalId);
     }
   } catch (e) {}
-  const active = document.querySelector('.view.active');
-  if (active && active.id && active.id !== 'animalDetail' && typeof show === 'function') {
-    // refresh active view renderers already called above
-  }
-  if (prev !== db.settings.currency) {
+  if (prev !== next) {
     try {
+      const example = convertCurrency(4500, 'THB', next);
       const tip = document.createElement('div');
       tip.className = 'notice ok';
-      tip.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);z-index:200;max-width:90%;padding:10px 16px;';
-      tip.textContent = t('currency_saved') + ': ' + db.settings.currency;
+      tip.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);z-index:200;max-width:92%;padding:10px 16px;';
+      tip.textContent = (typeof t === 'function' ? t('currency_saved') : 'Currency') + ': ' + next
+        + ' · prices converted (approx. rates)';
       document.body.appendChild(tip);
-      setTimeout(() => tip.remove(), 1800);
+      setTimeout(() => tip.remove(), 2200);
     } catch (e) {}
   }
 }
