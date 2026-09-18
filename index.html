@@ -503,10 +503,15 @@ textarea { min-height: 96px; resize: vertical; }
         </div>
         <div class="dash-body" id="dashActivity"></div>
       </div>
-      <div class="card">
-        <h3 data-i18n="quick_search">Quick search</h3>
-        <input class="search" placeholder="Name, gene, het, ID, notes…" data-i18n-placeholder="search_placeholder" oninput="quickSearch(this.value)">
-        <div id="quickResults"></div>
+      <div class="card dash-section" id="secSearch">
+        <div class="section-title">
+          <h3 data-i18n="quick_search">Quick search</h3>
+          <button type="button" class="dash-collapse-btn" onclick="toggleDashSection('search')">−</button>
+        </div>
+        <div class="dash-body">
+          <input class="search" placeholder="Name, gene, het, ID, notes…" data-i18n-placeholder="search_placeholder" oninput="quickSearch(this.value)">
+          <div id="quickResults"></div>
+        </div>
       </div>
     </section>
 
@@ -3165,7 +3170,9 @@ function applyDashCollapsed() {
     ['feed', 'secFeed'],
     ['dueTasks', 'secDueTasks'],
     ['hatches', 'secHatches'],
-    ['activity', 'secActivity']
+    ['activity', 'secActivity'],
+    ['search', 'secSearch'],
+    ['needWeight', 'secNeedWeight']
   ];
   pairs.forEach(([key, id]) => {
     const el = document.getElementById(id);
@@ -3301,20 +3308,10 @@ function dash() {
   const dueTaskList = (db.tasks||[])
     .map((x, i) => ({ ...x, _i: i }))
     .filter(x => !x.done && x.due && x.due <= todayStr);
-  const dueTasks = dueTaskList.length;
-  $('dashStats').innerHTML = `
-    <div class="stat"><strong>${ss.length}</strong><span>${t('snakes')}</span></div>
-    <div class="stat"><strong>${males}</strong><span>${t('males')}</span></div>
-    <div class="stat"><strong>${females}</strong><span>${t('females')}</span></div>
-    <div class="stat accent"><strong>${activeClutches}</strong><span>${t('active_clutches')}</span></div>
-    <div class="stat"><strong>${forSale}</strong><span>${t('for_sale_kpi')}</span></div>
-    <div class="stat warn" style="cursor:pointer" onclick="document.getElementById('secDueTasks')?.scrollIntoView({behavior:'smooth',block:'center'})"><strong>${dueTasks}</strong><span>${t('due_tasks')}</span></div>
-    <div class="stat accent"><strong>${money(rev-exp)}</strong><span>${t('recorded_net')}</span></div>
-    <div class="stat"><strong>${(db.pairings||[]).length}</strong><span>${t('pairings')}</span></div>
-  `;
 
-  // Alerts
-  const noWeight = ss.filter(s => !s.weight && !db.care.some(c => c.snakeId === s.id && c.type === 'weight')).length;
+  // Alerts / care actions (computed before KPI so Due tasks includes them)
+  const needWeightList = ss.filter(s => s.status !== 'Sold' && !s.weight && !db.care.some(c => c.snakeId === s.id && c.type === 'weight'));
+  const noWeight = needWeightList.length;
   function feedDueInfo(s) {
     const interval = Number(s.feedDays) || 14;
     const last = db.care.filter(c => c.snakeId === s.id && c.type === 'feed').sort((a,b) => b.date.localeCompare(a.date))[0];
@@ -3324,6 +3321,19 @@ function dash() {
   }
   const feedDueList = ss.map(s => ({ s, info: feedDueInfo(s) })).filter(x => x.info.due && x.s.status !== 'Sold');
   const overdueFeed = feedDueList.length;
+
+  // Due tasks KPI = manual tasks + missing weights + overdue feeds
+  const dueTasks = dueTaskList.length + noWeight + overdueFeed;
+  $('dashStats').innerHTML = `
+    <div class="stat"><strong>${ss.length}</strong><span>${t('snakes')}</span></div>
+    <div class="stat"><strong>${males}</strong><span>${t('males')}</span></div>
+    <div class="stat"><strong>${females}</strong><span>${t('females')}</span></div>
+    <div class="stat accent"><strong>${activeClutches}</strong><span>${t('active_clutches')}</span></div>
+    <div class="stat"><strong>${forSale}</strong><span>${t('for_sale_kpi')}</span></div>
+    <div class="stat warn" style="cursor:pointer" onclick="(document.getElementById('secDueTasks')||document.getElementById('secNeedWeight')||document.getElementById('secFeed'))?.scrollIntoView({behavior:'smooth',block:'center'})"><strong>${dueTasks}</strong><span>${t('due_tasks')}</span></div>
+    <div class="stat accent"><strong>${money(rev-exp)}</strong><span>${t('recorded_net')}</span></div>
+    <div class="stat"><strong>${(db.pairings||[]).length}</strong><span>${t('pairings')}</span></div>
+  `;
 
   // Hatch urgency
   const hatchSoon = db.clutches.filter(c => c.hatchDate && !c.hatched).map(c => ({
@@ -3337,15 +3347,15 @@ function dash() {
   if (dueToday.length) alerts.push(`<div class="notice ok">🔔 ${dueToday.length} clutch(es) expected to hatch <b>today</b>.</div>`);
   if (overdueHatch.length) alerts.push(`<div class="notice danger">⏰ ${overdueHatch.length} clutch(es) past expected hatch date.</div>`);
   if (dueWeek.length) alerts.push(`<div class="notice warn">📅 ${dueWeek.length} clutch(es) hatching within 7 days.</div>`);
-  if (dueTasks) alerts.push(`<div class="notice warn" style="cursor:pointer" onclick="document.getElementById('secDueTasks')?.scrollIntoView({behavior:'smooth',block:'center'})">📋 ${dueTasks} ${t('due_tasks').toLowerCase()} — tap Due tasks or scroll down</div>`);
-  if (noWeight) alerts.push(`<div class="notice">⚠️ ${t('no_weight_alert').replace('{n}', String(noWeight))}</div>`);
-  if (overdueFeed) alerts.push(`<div class="notice warn">🍽️ ${t('overdue_feed_alert').replace('{n}', String(overdueFeed))}</div>`);
+  if (dueTasks) alerts.push(`<div class="notice warn" style="cursor:pointer" onclick="(document.getElementById('secDueTasks')||document.getElementById('secNeedWeight')||document.getElementById('secFeed'))?.scrollIntoView({behavior:'smooth',block:'center'})">📋 ${dueTasks} ${t('due_tasks').toLowerCase()} (tasks, weight, feeding)</div>`);
+  if (noWeight) alerts.push(`<div class="notice" style="cursor:pointer" onclick="document.getElementById('secNeedWeight')?.scrollIntoView({behavior:'smooth',block:'center'})">⚠️ ${t('no_weight_alert').replace('{n}', String(noWeight))}</div>`);
+  if (overdueFeed) alerts.push(`<div class="notice warn" style="cursor:pointer" onclick="document.getElementById('secFeed')?.scrollIntoView({behavior:'smooth',block:'center'})">🍽️ ${t('overdue_feed_alert').replace('{n}', String(overdueFeed))}</div>`);
   if (!alerts.length) alerts.push(`<div class="notice ok">✓ ${t('collection_healthy')}</div>`);
 
   const dueTasksSection = dueTaskList.length ? `
     <div class="card dash-section" style="margin-top:10px" id="secDueTasks">
       <div class="section-title">
-        <h3>${t('due_tasks')} (${dueTaskList.length})</h3>
+        <h3>${t('open_tasks')} (${dueTaskList.length})</h3>
         <button type="button" class="dash-collapse-btn" onclick="toggleDashSection('dueTasks')">−</button>
       </div>
       <div class="dash-body">
@@ -3358,6 +3368,25 @@ function dash() {
         <div class="actions" style="margin-top:8px">
           <button class="ghost small" onclick="show('reports')">${t('open_tasks')}</button>
           <button class="small primary" onclick="show('reports');setTimeout(()=>addTask(),50)">＋ ${t('add_task')}</button>
+        </div>
+      </div>
+    </div>` : '';
+
+  const needWeightSection = needWeightList.length ? `
+    <div class="card dash-section" style="margin-top:10px" id="secNeedWeight">
+      <div class="section-title">
+        <h3>Need weight (${needWeightList.length})</h3>
+        <button type="button" class="dash-collapse-btn" onclick="toggleDashSection('needWeight')">−</button>
+      </div>
+      <div class="dash-body">
+      ${needWeightList.slice(0,15).map(s => `
+        <div class="line" onclick="animalDetail('${s.id}')" style="cursor:pointer">
+          <b>${esc(s.name)}</b>
+          <span class="muted">${esc(s.sex||'')} · ${esc(s.location||'')}</span>
+          <button class="small" style="margin-left:8px" onclick="event.stopPropagation();setCareSnake('${s.id}');logCare('weight')">⚖️ Weight</button>
+        </div>`).join('')}
+        <div class="actions" style="margin-top:8px">
+          <button class="small primary" onclick="bulkWeight()">⚖️ ${t('bulk_weight')}</button>
         </div>
       </div>
     </div>` : '';
@@ -3379,7 +3408,7 @@ function dash() {
       </div>
     </div>` : '';
 
-  $('dashAlerts').innerHTML = alerts.join('') + dueTasksSection + feedSection;
+  $('dashAlerts').innerHTML = alerts.join('') + dueTasksSection + needWeightSection + feedSection;
   // restore collapsed states after redraw
   setTimeout(applyDashCollapsed, 0);
 
