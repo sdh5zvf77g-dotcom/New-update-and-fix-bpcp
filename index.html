@@ -524,6 +524,13 @@ textarea { min-height: 96px; resize: vertical; }
       </div>
       <div class="grid" id="dashStats" class="grid wide"></div>
       <div id="dashAlerts" style="margin-top:12px"></div>
+      <div class="card dash-section" style="margin-top:12px" id="secSold">
+        <div class="section-title">
+          <h3>Sold snakes</h3>
+          <button type="button" class="dash-collapse-btn" onclick="toggleDashSection('sold')">−</button>
+        </div>
+        <div class="dash-body" id="dashSold"></div>
+      </div>
       <div class="card dash-section" style="margin-top:12px" id="secHatches">
         <div class="section-title">
           <h3 data-i18n="upcoming_hatches">Upcoming hatches</h3>
@@ -3211,6 +3218,7 @@ function applyDashCollapsed() {
     ['feed', 'secFeed'],
     ['dueTasks', 'secDueTasks'],
     ['needWeight', 'secNeedWeight'],
+    ['sold', 'secSold'],
     ['hatches', 'secHatches'],
     ['activity', 'secActivity'],
     ['search', 'secSearch']
@@ -3375,10 +3383,13 @@ function restoreFeederToStock(feed){if(!feed?.stockDeducted)return;const used=Ar
 function feedStockWarning(result){if(!result.parsed)return '';if(result.reason==='unrecognised')return 'Feeding saved, but the prey text could not be matched to Food Stock. Try names such as “XXL rat”, “medium mouse” or “pup rat”.';return `Feeding saved, but Food Stock does not have enough ${result.parsed.type} — ${result.parsed.size}. Add stock before the next feed.`;}
 
 function dash() {
-  const ss = db.snakes;
-  const males = ss.filter(s => s.sex === 'Male').length;
-  const females = ss.filter(s => s.sex === 'Female').length;
-  const forSale = ss.filter(s => s.status === 'For Sale').length;
+  const ss = db.snakes || [];
+  // Active collection excludes sold snakes from main totals
+  const active = ss.filter(s => s.status !== 'Sold');
+  const soldList = ss.filter(s => s.status === 'Sold');
+  const males = active.filter(s => s.sex === 'Male').length;
+  const females = active.filter(s => s.sex === 'Female').length;
+  const forSale = active.filter(s => s.status === 'For Sale').length;
   const activeClutches = db.clutches.filter(c => c.hatchDate && c.hatchDate >= today()).length;
 
   ensureArrays();
@@ -3390,7 +3401,7 @@ function dash() {
     .map((x, i) => ({ ...x, _i: i }))
     .filter(x => !x.done && x.due && x.due <= todayStr);
 
-  const needWeightList = ss.filter(s => s.status !== 'Sold' && !s.weight && !db.care.some(c => c.snakeId === s.id && c.type === 'weight'));
+  const needWeightList = active.filter(s => !s.weight && !db.care.some(c => c.snakeId === s.id && c.type === 'weight'));
   const noWeight = needWeightList.length;
   function feedDueInfo(s) {
     const interval = Number(s.feedDays) || 14;
@@ -3399,21 +3410,36 @@ function dash() {
     const daysSince = daysBetween(last.date, todayStr);
     return { due: daysSince >= interval, daysOver: daysSince - interval, last, interval, daysSince };
   }
-  const feedDueList = ss.map(s => ({ s, info: feedDueInfo(s) })).filter(x => x.info.due && x.s.status !== 'Sold');
+  const feedDueList = active.map(s => ({ s, info: feedDueInfo(s) })).filter(x => x.info.due);
   const overdueFeed = feedDueList.length;
 
   // Due tasks = care actions + manual tasks (matches what needs doing)
   const dueTasks = dueTaskList.length + noWeight + overdueFeed;
   $('dashStats').innerHTML = `
-    <div class="stat"><strong>${ss.length}</strong><span>${t('snakes')}</span></div>
+    <div class="stat"><strong>${active.length}</strong><span>${t('snakes')}</span></div>
     <div class="stat"><strong>${males}</strong><span>${t('males')}</span></div>
     <div class="stat"><strong>${females}</strong><span>${t('females')}</span></div>
     <div class="stat accent"><strong>${activeClutches}</strong><span>${t('active_clutches')}</span></div>
     <div class="stat"><strong>${forSale}</strong><span>${t('for_sale_kpi')}</span></div>
     <div class="stat warn" style="cursor:pointer" onclick="goAction(noWeight?'weight':(overdueFeed?'feed':'tasks'))"><strong>${dueTasks}</strong><span>${t('due_tasks')}</span></div>
     <div class="stat accent"><strong>${money(rev-exp)}</strong><span>${t('recorded_net')}</span></div>
-    <div class="stat"><strong>${(db.pairings||[]).length}</strong><span>${t('pairings')}</span></div>
+    <div class="stat" style="cursor:pointer" onclick="document.getElementById('secSold')?.scrollIntoView({behavior:'smooth',block:'center'})"><strong>${soldList.length}</strong><span>Sold</span></div>
   `;
+
+  // Sold snakes box
+  const soldEl = document.getElementById('dashSold');
+  if (soldEl) {
+    soldEl.innerHTML = soldList.length
+      ? soldList.slice(0, 30).map(s => `
+          <div class="line" onclick="animalDetail('${s.id}')" style="cursor:pointer">
+            <b>${esc(s.name)}</b>
+            <span class="muted">${esc(s.sex||'')} · ${esc(s.genes||s.hets||'')}</span>
+            <span class="tag status sold">Sold</span>
+          </div>`).join('') +
+          (soldList.length > 30 ? `<div class="muted" style="margin-top:8px">+${soldList.length - 30} more — filter by Sold on Snakes</div>` : '') +
+          `<div class="actions" style="margin-top:8px"><button class="ghost small" onclick="show('animals');const sel=document.getElementById('astatus');if(sel){sel.value='Sold';renderAnimals();}">View all sold</button></div>`
+      : `<div class="muted">No sold snakes yet.</div>`;
+  }
 
   // Hatch urgency
   const hatchSoon = db.clutches.filter(c => c.hatchDate && !c.hatched).map(c => ({
