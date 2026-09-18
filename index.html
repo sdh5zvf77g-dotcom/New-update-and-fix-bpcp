@@ -6,13 +6,13 @@
 <meta name="theme-color" content="#0a1610">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Ball Python Business Pro">
+<meta name="apple-mobile-web-app-title" content="Ball Python Complete Pro">
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
-<title>Ball Python Business Pro</title>
+<title>Ball Python Complete Pro</title>
 <style>
 :root {
   --bg: #050d09;
@@ -260,6 +260,41 @@ textarea { min-height: 96px; resize: vertical; }
 }
 .notice.ok { background: var(--accent-soft); color: #86efac; }
 .notice.danger { background: var(--danger-soft); color: #fca5a5; }
+.notice.tap { cursor: pointer; }
+.action-needed {
+  background: linear-gradient(180deg, rgba(245,158,11,.12), rgba(245,158,11,.06));
+  border: 1px solid rgba(245,158,11,.45);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin: 10px 0;
+}
+.action-needed h3 {
+  margin: 0 0 10px;
+  color: #fcd34d;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.action-item {
+  background: rgba(0,0,0,.25);
+  border: 1px solid rgba(245,158,11,.25);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-top: 8px;
+  color: #fcd34d;
+  font-size: 14px;
+  line-height: 1.4;
+  cursor: pointer;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  transition: background .15s, border-color .15s;
+}
+.action-item:active { background: rgba(245,158,11,.15); border-color: rgba(245,158,11,.5); }
+.action-item .ai-ico { font-size: 18px; line-height: 1.2; flex: none; }
+.action-item .ai-body { flex: 1; min-width: 0; }
+.action-item .ai-go { opacity: .7; font-size: 12px; flex: none; align-self: center; }
 
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
@@ -432,7 +467,7 @@ textarea { min-height: 96px; resize: vertical; }
   <header class="head">
     <div class="brand-row">
       <div>
-        <div class="brand">🐍 <span>Ball Python</span> Pro <span style="font-size:12px;font-weight:700;opacity:.85;letter-spacing:0">V1</span></div>
+        <div class="brand">🐍 <span>Ball Python</span> Complete Pro</div>
         <div class="sub" id="bizHeaderLine">Care tracker</div>
       </div>
       <div class="head-actions">
@@ -580,9 +615,10 @@ textarea { min-height: 96px; resize: vertical; }
           <div><label data-i18n="dob">Date of Birth</label><input id="adob" type="date"></div>
           <div><label data-i18n="location">Location</label><input id="alocation" placeholder="Rack A / Tub 4"></div>
         </div>
-        <div class="two">
+        <div class="three">
           <div><label data-i18n="feed_every">Feed every (days)</label><input id="afeedDays" type="number" min="1" placeholder="14" value="14"></div>
-          <div><label data-i18n="sale_price">Sale price</label><input id="aprice" placeholder="e.g. 5000 THB"></div>
+          <div><label>Purchase / acquisition cost</label><input id="acquisitionCost" type="number" min="0" step="0.01" placeholder="e.g. 4000"></div>
+          <div><label data-i18n="sale_price">Sale price</label><input id="aprice" placeholder="e.g. 8000 THB"></div>
         </div>
         <label data-i18n="parents">Parents</label>
         <div class="two">
@@ -993,9 +1029,14 @@ textarea { min-height: 96px; resize: vertical; }
         <label>Rodent type<select id="fsType"></select></label>
         <label>Size<select id="fsSize"></select></label>
         <label>Quantity<input id="fsQty" type="number" min="1" step="1" value="1"></label>
+        <label>Actual average weight (g)<input id="fsWeight" type="number" min="0" step="0.1" placeholder="e.g. 95"></label>
+        <label>Total purchase price<input id="fsPurchasePrice" type="number" min="0" step="0.01" placeholder="e.g. 500"></label>
+        <label>Supplier<input id="fsSupplier" placeholder="Supplier / breeder"></label>
+        <label>Date purchased<input id="fsPurchaseDate" type="date"></label>
+        <label>Freezer location<input id="fsFreezerLocation" placeholder="Freezer 1 / Drawer A"></label>
       </div>
-      <div class="actions" style="margin-bottom:0"><button type="button" class="primary" onclick="addFoodStock()">＋ Add to stock</button></div>
-      <div class="bp-small" style="margin-top:8px">Supplier size names vary. The app treats XXL as Double Extra-Large / Super Jumbo and XXXL as Triple Extra-Large / Colossal where applicable.</div>
+      <div class="actions" style="margin-bottom:0"><button type="button" class="primary" onclick="addFoodStock()">＋ Add feeder batch</button></div>
+      <div class="bp-small" style="margin-top:8px">Each batch keeps its own weight, cost, supplier, purchase date and freezer location. Feeding uses FIFO (oldest matching batch first) so food costs can be tracked per snake.</div>
     </div>
     <div class="card" style="margin-top:12px"><h3>Current stock</h3><div id="foodStockList" class="food-stock-modal-list"></div></div>
     <div class="card" style="margin-top:12px"><h3>Feeder size reference</h3><div id="foodSizeReference"></div></div>
@@ -3169,10 +3210,10 @@ function applyDashCollapsed() {
   const pairs = [
     ['feed', 'secFeed'],
     ['dueTasks', 'secDueTasks'],
+    ['needWeight', 'secNeedWeight'],
     ['hatches', 'secHatches'],
     ['activity', 'secActivity'],
-    ['search', 'secSearch'],
-    ['needWeight', 'secNeedWeight']
+    ['search', 'secSearch']
   ];
   pairs.forEach(([key, id]) => {
     const el = document.getElementById(id);
@@ -3192,6 +3233,32 @@ function completeDashTask(index) {
   if (typeof renderReports === 'function' && document.getElementById('reports')?.classList.contains('active')) {
     renderReports();
   }
+}
+function goAction(kind) {
+  if (kind === 'weight') {
+    // Prefer bulk weight entry; fall back to need-weight list on dashboard
+    if (typeof bulkWeight === 'function') {
+      bulkWeight();
+      return;
+    }
+    show('dashboard');
+    setTimeout(() => document.getElementById('secNeedWeight')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 120);
+    return;
+  }
+  if (kind === 'feed') {
+    show('dashboard');
+    setTimeout(() => document.getElementById('secFeed')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 120);
+    return;
+  }
+  if (kind === 'tasks') {
+    show('reports');
+    return;
+  }
+  if (kind === 'hatch') {
+    show('clutches');
+    return;
+  }
+  show('dashboard');
 }
 
 const FEEDER_CATALOG = {
@@ -3255,43 +3322,57 @@ function populateFoodSizes(){
   const type=$('fsType')?.value; const sel=$('fsSize'); if(!sel)return;
   sel.innerHTML=(FEEDER_CATALOG[type]||[]).map(([s,w])=>`<option value="${esc(s)}">${esc(s)}${w?' — '+esc(w):''}</option>`).join('');
 }
+function normalizeFoodStockItem(x){
+  if(!x || typeof x!=='object') return x;
+  if(!x.batchId) x.batchId=x.id||uid();
+  if(x.qty==null) x.qty=0;
+  if(x.purchasePrice==null) x.purchasePrice=0;
+  if(x.avgWeight==null) x.avgWeight=Number(x.weight)||0;
+  if(x.purchaseDate==null) x.purchaseDate='';
+  if(x.supplier==null) x.supplier='';
+  if(x.freezerLocation==null) x.freezerLocation='';
+  return x;
+}
+function foodStockTotal(){ return (db.foodStock||[]).reduce((a,x)=>a+Math.max(0,Number(x.qty)||0),0); }
+function renderFoodStockDashboard(){
+  ensureArrays();
+  const total=foodStockTotal(); const el=$('dashFoodStockTotal'); if(el) el.textContent=total;
+  const pre=$('dashFoodStockPreview'); if(!pre)return;
+  const grouped={};
+  db.foodStock.filter(x=>Number(x.qty)>0).forEach(x=>{const k=x.type+'|'+x.size;(grouped[k]??=[]).push(x);});
+  const active=Object.values(grouped).slice(0,5).map(a=>a[0]);
+  pre.innerHTML=active.length?active.map(x=>{const qty=db.foodStock.filter(y=>y.type===x.type&&y.size===x.size).reduce((a,y)=>a+Number(y.qty||0),0);return `<div class="food-stock-row"><div><div class="food-stock-name">${esc(x.type)} — ${esc(x.size)}</div><div class="food-stock-meta">${esc(x.avgWeight?x.avgWeight+' g avg':'Weight not recorded')}</div></div><b class="${qty<=2?'food-stock-low':''}">${qty}</b></div>`}).join(''):`<div class="muted">No feeder stock entered yet. Tap Manage Food Stock to add your frozen feeders.</div>`;
+}
+function openFoodStock(){
+  ensureArrays(); const m=$('foodStockModal');if(!m)return;
+  const type=$('fsType'); type.innerHTML=Object.keys(FEEDER_CATALOG).map(k=>`<option>${esc(k)}</option>`).join('');
+  type.onchange=populateFoodSizes; populateFoodSizes();
+  if($('fsPurchaseDate') && !$('fsPurchaseDate').value) $('fsPurchaseDate').value=today();
+  renderFoodStockList(); renderFoodSizeReference(); m.classList.add('open');m.setAttribute('aria-hidden','false');
+}
+function closeFoodStock(){const m=$('foodStockModal');if(m){m.classList.remove('open');m.setAttribute('aria-hidden','true');}}
+function populateFoodSizes(){const type=$('fsType')?.value,sel=$('fsSize');if(!sel)return;sel.innerHTML=(FEEDER_CATALOG[type]||[]).map(([s,w])=>`<option value="${esc(s)}">${esc(s)}${w?' — '+esc(w):''}</option>`).join('');}
 function addFoodStock(){
-  ensureArrays(); const type=$('fsType').value,size=$('fsSize').value,qty=Math.max(1,parseInt($('fsQty').value,10)||0); if(!qty)return;
-  const key=feederCanonical(type,size); let item=db.foodStock.find(x=>x.key===key);
-  if(item)item.qty=(Number(item.qty)||0)+qty; else {const ref=(FEEDER_CATALOG[type]||[]).find(x=>x[0]===size); db.foodStock.push({id:uid(),key,type,size,weight:ref?.[1]||'',qty});}
-  save(); renderFoodStockList(); renderFoodStockDashboard(); if($('fsQty'))$('fsQty').value=1;
+  ensureArrays(); const type=$('fsType').value,size=$('fsSize').value,qty=Math.max(1,parseInt($('fsQty').value,10)||0);if(!qty)return;
+  const avgWeight=Math.max(0,Number($('fsWeight').value)||0),purchasePrice=Math.max(0,Number($('fsPurchasePrice').value)||0);
+  const item={id:uid(),batchId:uid(),key:feederCanonical(type,size),type,size,qty,avgWeight,weight:avgWeight?String(avgWeight):'',purchasePrice,supplier:$('fsSupplier').value.trim(),purchaseDate:$('fsPurchaseDate').value||today(),freezerLocation:$('fsFreezerLocation').value.trim()};
+  db.foodStock.push(item); save(); renderFoodStockList();renderFoodStockDashboard();
+  ['fsQty','fsWeight','fsPurchasePrice','fsSupplier','fsFreezerLocation'].forEach(id=>{if($(id))$(id).value=id==='fsQty'?1:'';});
+  if($('fsPurchaseDate'))$('fsPurchaseDate').value=today();
 }
 function changeFoodStock(id,delta){const x=db.foodStock.find(v=>v.id===id);if(!x)return;x.qty=Math.max(0,(Number(x.qty)||0)+delta);save();renderFoodStockList();renderFoodStockDashboard();}
 function removeFoodStock(id){db.foodStock=db.foodStock.filter(x=>x.id!==id);save();renderFoodStockList();renderFoodStockDashboard();}
 function renderFoodStockList(){
-  const el=$('foodStockList');if(!el)return;const rows=[...db.foodStock].sort((a,b)=>a.type.localeCompare(b.type)||a.size.localeCompare(b.size));
-  el.innerHTML=rows.length?rows.map(x=>`<div class="food-stock-row"><div><div class="food-stock-name">${esc(x.type)} — ${esc(x.size)}</div><div class="food-stock-meta">${esc(x.weight||'Supplier weight varies')}</div></div><div class="row" style="flex:none"><button class="small" onclick="changeFoodStock('${x.id}',-1)">−</button><b style="min-width:28px;text-align:center">${Number(x.qty)||0}</b><button class="small" onclick="changeFoodStock('${x.id}',1)">＋</button><button class="small danger" onclick="removeFoodStock('${x.id}')">Delete</button></div></div>`).join(''):`<div class="empty"><div class="big">📦</div><h3>No food stock yet</h3><div>Add the feeders you have in your freezer above.</div></div>`;
+  const el=$('foodStockList');if(!el)return; db.foodStock.forEach(normalizeFoodStockItem);
+  const rows=[...db.foodStock].filter(x=>Number(x.qty)>0).sort((a,b)=>(a.purchaseDate||'').localeCompare(b.purchaseDate||''));
+  el.innerHTML=rows.length?rows.map(x=>{const unit=x.qty?Number(x.purchasePrice||0)/Number(x.qty):0;return `<div class="card" style="margin-bottom:8px"><div class="food-stock-row"><div><div class="food-stock-name">${esc(x.type)} — ${esc(x.size)}</div><div class="food-stock-meta">${x.avgWeight?esc(x.avgWeight)+' g avg · ':''}${money(x.purchasePrice)} total · ${money(unit)} each</div><div class="food-stock-meta">${esc(x.supplier||'Supplier not recorded')} · ${esc(x.purchaseDate||'Date not recorded')} · ${esc(x.freezerLocation||'Freezer location not recorded')}</div></div><div class="row" style="flex:none"><button class="small" onclick="changeFoodStock('${x.id}',-1)">−</button><b style="min-width:28px;text-align:center">${Number(x.qty)||0}</b><button class="small" onclick="changeFoodStock('${x.id}',1)">＋</button><button class="small danger" onclick="removeFoodStock('${x.id}')">Delete</button></div></div></div>`}).join(''):`<div class="empty"><div class="big">📦</div><h3>No food stock yet</h3><div>Add the feeders you have in your freezer above.</div></div>`;
 }
-function renderFoodSizeReference(){
-  const el=$('foodSizeReference');if(!el)return;
-  el.innerHTML=`<div class="bp-small" style="margin-bottom:8px">These are a reference, not a universal standard. Feeder suppliers use different names and weights. Choose prey by the snake's body condition and the feeder's actual size/weight.</div>`+Object.entries(FEEDER_CATALOG).map(([type,arr])=>`<div class="line"><b>${esc(type)}</b>${arr.map(([s,w])=>`<span class="bp-chip">${esc(s)}${w?' · '+esc(w):''}</span>`).join('')}</div>`).join('');
-}
-function deductFeederFromStock(value){
-  const parsed=parseFeederText(value); if(!parsed || !parsed.size)return {parsed,ok:false,reason:'unrecognised'};
-  const key=feederCanonical(parsed.type,parsed.size); const item=db.foodStock.find(x=>x.key===key);
-  if(!item || Number(item.qty)<parsed.qty)return {parsed,ok:false,reason:'not_enough',item};
-  item.qty=Number(item.qty)-parsed.qty; return {parsed,ok:true,item};
-}
-function restoreFeederToStock(feed){
-  if(!feed?.stockDeducted)return;
-  const key=feed.stockKey; const item=db.foodStock.find(x=>x.key===key);
-  if(item)item.qty=(Number(item.qty)||0)+Number(feed.stockDeducted||0);
-  else db.foodStock.push({id:uid(),key,type:feed.stockType,size:feed.stockSize,weight:feed.stockWeight||'',qty:Number(feed.stockDeducted)||0});
-}
-function tryDeductForFeed(rec){
-  const result=deductFeederFromStock(rec.value); if(result.ok){rec.stockKey=result.item.key;rec.stockDeducted=result.parsed.qty;rec.stockType=result.parsed.type;rec.stockSize=result.parsed.size;rec.stockWeight=result.item.weight||'';return true;}
-  return false;
-}
-function feedStockWarning(result){
-  if(!result.parsed)return '';
-  if(result.reason==='unrecognised')return 'Feeding saved, but the prey text could not be matched to Food Stock. Try names such as “XXL rat”, “medium mouse” or “pup rat”.';
-  return `Feeding saved, but Food Stock does not have enough ${result.parsed.type} — ${result.parsed.size}. Add stock before the next feed.`;
-}
+function renderFoodSizeReference(){const el=$('foodSizeReference');if(!el)return;el.innerHTML=`<div class="bp-small" style="margin-bottom:8px">These are a reference, not a universal standard. Feeder suppliers use different names and weights. Choose prey by the snake's body condition and the feeder's actual size/weight.</div>`+Object.entries(FEEDER_CATALOG).map(([type,arr])=>`<div class="line"><b>${esc(type)}</b>${arr.map(([s,w])=>`<span class="bp-chip">${esc(s)}${w?' · '+esc(w):''}</span>`).join('')}</div>`).join('');}
+function parseFeederText(value=''){const raw=String(value).trim();if(!raw)return null;const low=feederNorm(raw);const qtyMatch=raw.match(/^\s*(\d+)\s*(?:x|×)?\s+/i),qty=qtyMatch?Math.max(1,Number(qtyMatch[1])):1;const text=low.replace(/^\d+\s*(?:x)?\s+/,' ');const types=[['African Soft-Furred Rat (ASF)','african soft furred rat'],['African Soft-Furred Rat (ASF)','asf'],['Rat','rat'],['Mouse','mouse'],['Gerbil','gerbil'],['Hamster','hamster']];const found=types.find(([t,k])=>text.includes(k));if(!found)return null;const type=found[0];let size='';const aliases=[['XXXL / Colossal',['xxxl']],['XXL / Super Jumbo',['xxl']],['XL / Jumbo',['xl','jumbo']],['Pinky',['pinky']],['Fuzzy',['fuzzy']],['Pup',['pup','crawler']],['Weaned',['weaned','weanling']],['Hopper',['hopper']],['Small / Weanling',['small']],['Small',['small']],['Medium',['medium']],['Large / Adult',['large','adult']],['Large',['large']],['Adult',['adult']]];for(const [label,ks] of aliases){if(ks.some(k=>text.includes(k))){size=label;break;}}if(!size)return {type,size:null,qty,raw};if(type==='Mouse'&&size==='Small')size='Small / Weanling';if(type==='Mouse'&&size==='Large')size='Large / Adult';if(type==='Rat'&&size==='Large / Adult')size='Large';return {type,size,qty,raw};}
+function feederUnitCost(item){const q=Math.max(1,Number(item?.qty)||1);return Number(item?.purchasePrice||0)/q;}
+function deductFeederFromStock(value){const parsed=parseFeederText(value);if(!parsed||!parsed.size)return {parsed,ok:false,reason:'unrecognised'};const batches=db.foodStock.filter(x=>x.key===feederCanonical(parsed.type,parsed.size)&&Number(x.qty)>0).sort((a,b)=>(a.purchaseDate||'').localeCompare(b.purchaseDate||''));let remaining=parsed.qty,cost=0,used=[];for(const item of batches){if(remaining<=0)break;const take=Math.min(remaining,Number(item.qty)||0),unit=feederUnitCost(item);item.qty-=take;cost+=take*unit;used.push({batchId:item.batchId||item.id,qty:take,cost:take*unit});remaining-=take;}if(remaining>0){for(const u of used){const item=db.foodStock.find(x=>(x.batchId||x.id)===u.batchId);if(item)item.qty+=u.qty;}return {parsed,ok:false,reason:'not_enough'};}return {parsed,ok:true,cost,used};}
+function restoreFeederToStock(feed){if(!feed?.stockDeducted)return;const used=Array.isArray(feed.stockBatches)?feed.stockBatches:[];if(used.length){used.forEach(u=>{const item=db.foodStock.find(x=>(x.batchId||x.id)===u.batchId);if(item)item.qty=Number(item.qty||0)+Number(u.qty||0);});return;}const key=feed.stockKey,item=db.foodStock.find(x=>x.key===key);if(item)item.qty=(Number(item.qty)||0)+Number(feed.stockDeducted||0);else db.foodStock.push({id:uid(),batchId:uid(),key,type:feed.stockType,size:feed.stockSize,weight:feed.stockWeight||'',avgWeight:Number(feed.stockWeight)||0,qty:Number(feed.stockDeducted)||0,purchasePrice:0,supplier:'',purchaseDate:today(),freezerLocation:''});}
+function feedStockWarning(result){if(!result.parsed)return '';if(result.reason==='unrecognised')return 'Feeding saved, but the prey text could not be matched to Food Stock. Try names such as “XXL rat”, “medium mouse” or “pup rat”.';return `Feeding saved, but Food Stock does not have enough ${result.parsed.type} — ${result.parsed.size}. Add stock before the next feed.`;}
 
 function dash() {
   const ss = db.snakes;
@@ -3309,7 +3390,6 @@ function dash() {
     .map((x, i) => ({ ...x, _i: i }))
     .filter(x => !x.done && x.due && x.due <= todayStr);
 
-  // Alerts / care actions (computed before KPI so Due tasks includes them)
   const needWeightList = ss.filter(s => s.status !== 'Sold' && !s.weight && !db.care.some(c => c.snakeId === s.id && c.type === 'weight'));
   const noWeight = needWeightList.length;
   function feedDueInfo(s) {
@@ -3322,7 +3402,7 @@ function dash() {
   const feedDueList = ss.map(s => ({ s, info: feedDueInfo(s) })).filter(x => x.info.due && x.s.status !== 'Sold');
   const overdueFeed = feedDueList.length;
 
-  // Due tasks KPI = manual tasks + missing weights + overdue feeds
+  // Due tasks = care actions + manual tasks (matches what needs doing)
   const dueTasks = dueTaskList.length + noWeight + overdueFeed;
   $('dashStats').innerHTML = `
     <div class="stat"><strong>${ss.length}</strong><span>${t('snakes')}</span></div>
@@ -3330,7 +3410,7 @@ function dash() {
     <div class="stat"><strong>${females}</strong><span>${t('females')}</span></div>
     <div class="stat accent"><strong>${activeClutches}</strong><span>${t('active_clutches')}</span></div>
     <div class="stat"><strong>${forSale}</strong><span>${t('for_sale_kpi')}</span></div>
-    <div class="stat warn" style="cursor:pointer" onclick="(document.getElementById('secDueTasks')||document.getElementById('secNeedWeight')||document.getElementById('secFeed'))?.scrollIntoView({behavior:'smooth',block:'center'})"><strong>${dueTasks}</strong><span>${t('due_tasks')}</span></div>
+    <div class="stat warn" style="cursor:pointer" onclick="goAction(noWeight?'weight':(overdueFeed?'feed':'tasks'))"><strong>${dueTasks}</strong><span>${t('due_tasks')}</span></div>
     <div class="stat accent"><strong>${money(rev-exp)}</strong><span>${t('recorded_net')}</span></div>
     <div class="stat"><strong>${(db.pairings||[]).length}</strong><span>${t('pairings')}</span></div>
   `;
@@ -3343,14 +3423,29 @@ function dash() {
   const overdueHatch = hatchSoon.filter(x => x.days < 0);
   const dueWeek = hatchSoon.filter(x => x.days > 0 && x.days <= 7);
 
-  let alerts = [];
-  if (dueToday.length) alerts.push(`<div class="notice ok">🔔 ${dueToday.length} clutch(es) expected to hatch <b>today</b>.</div>`);
-  if (overdueHatch.length) alerts.push(`<div class="notice danger">⏰ ${overdueHatch.length} clutch(es) past expected hatch date.</div>`);
-  if (dueWeek.length) alerts.push(`<div class="notice warn">📅 ${dueWeek.length} clutch(es) hatching within 7 days.</div>`);
-  if (dueTasks) alerts.push(`<div class="notice warn" style="cursor:pointer" onclick="(document.getElementById('secDueTasks')||document.getElementById('secNeedWeight')||document.getElementById('secFeed'))?.scrollIntoView({behavior:'smooth',block:'center'})">📋 ${dueTasks} ${t('due_tasks').toLowerCase()} (tasks, weight, feeding)</div>`);
-  if (noWeight) alerts.push(`<div class="notice" style="cursor:pointer" onclick="document.getElementById('secNeedWeight')?.scrollIntoView({behavior:'smooth',block:'center'})">⚠️ ${t('no_weight_alert').replace('{n}', String(noWeight))}</div>`);
-  if (overdueFeed) alerts.push(`<div class="notice warn" style="cursor:pointer" onclick="document.getElementById('secFeed')?.scrollIntoView({behavior:'smooth',block:'center'})">🍽️ ${t('overdue_feed_alert').replace('{n}', String(overdueFeed))}</div>`);
-  if (!alerts.length) alerts.push(`<div class="notice ok">✓ ${t('collection_healthy')}</div>`);
+  // Action needed box (tappable → goes to the right place)
+  const actionItems = [];
+  if (noWeight) actionItems.push({ kind:'weight', ico:'⚖️', text: t('no_weight_alert').replace('{n}', String(noWeight)) });
+  if (overdueFeed) actionItems.push({ kind:'feed', ico:'🍽️', text: t('overdue_feed_alert').replace('{n}', String(overdueFeed)) });
+  if (dueTaskList.length) actionItems.push({ kind:'tasks', ico:'📋', text: `${dueTaskList.length} ${t('due_tasks').toLowerCase()}` });
+  if (dueToday.length) actionItems.push({ kind:'hatch', ico:'🔔', text: `${dueToday.length} clutch(es) expected to hatch today` });
+  if (overdueHatch.length) actionItems.push({ kind:'hatch', ico:'⏰', text: `${overdueHatch.length} clutch(es) past expected hatch date` });
+  if (dueWeek.length) actionItems.push({ kind:'hatch', ico:'📅', text: `${dueWeek.length} clutch(es) hatching within 7 days` });
+
+  let alertsHtml = '';
+  if (actionItems.length) {
+    alertsHtml = `<div class="action-needed">
+      <h3>⚡ Action needed</h3>
+      ${actionItems.map(a => `
+        <div class="action-item" onclick="goAction('${a.kind}')">
+          <span class="ai-ico">${a.ico}</span>
+          <span class="ai-body">${a.text}</span>
+          <span class="ai-go">Open ›</span>
+        </div>`).join('')}
+    </div>`;
+  } else {
+    alertsHtml = `<div class="notice ok">✓ ${t('collection_healthy')}</div>`;
+  }
 
   const dueTasksSection = dueTaskList.length ? `
     <div class="card dash-section" style="margin-top:10px" id="secDueTasks">
@@ -3408,7 +3503,7 @@ function dash() {
       </div>
     </div>` : '';
 
-  $('dashAlerts').innerHTML = alerts.join('') + dueTasksSection + needWeightSection + feedSection;
+  $('dashAlerts').innerHTML = alertsHtml + dueTasksSection + needWeightSection + feedSection;
   // restore collapsed states after redraw
   setTimeout(applyDashCollapsed, 0);
 
@@ -3555,6 +3650,7 @@ function editAnimal(id) {
   $('adob').value = s.dob || '';
   $('alocation').value = s.location || '';
   if ($('afeedDays')) $('afeedDays').value = s.feedDays || 14;
+  if ($('acquisitionCost')) $('acquisitionCost').value = s.acquisitionCost || '';
   if ($('aprice')) $('aprice').value = s.price || '';
   $('anotes').value = s.notes || '';
   $('asire').value = s.sire || '';
@@ -3629,6 +3725,7 @@ $('af').onsubmit = e => {
     hets: $('ahets').value.trim(),
     status: $('astatusf').value,
     feedDays: parseInt($('afeedDays').value) || 14,
+    acquisitionCost: Number($('acquisitionCost').value) || 0,
     price: $('aprice').value.trim(),
     weight: $('aweight').value,
     dob: $('adob').value,
@@ -3661,6 +3758,11 @@ function weightSpark(snakeId) {
   }).join('')}</div>`;
 }
 
+function snakeFoodCost(snakeId){return db.care.filter(c=>c.snakeId===snakeId&&c.type==='feed').reduce((a,c)=>a+Number(c.stockCost||0),0);}
+function snakeRecordedOtherCosts(snakeId){return db.expenses.filter(x=>x.snakeId===snakeId).reduce((a,x)=>a+Number(x.amount||0),0);}
+function snakeSaleAmount(s){const linked=(db.sales||[]).find(x=>x.snakeId===s.id);if(linked)return Number(linked.amount||0);const n=String(s.price||'').replace(/[^0-9.]/g,'');return Number(n)||0;}
+function renderSnakeCostProfit(s){const purchase=Number(s.acquisitionCost||0),food=snakeFoodCost(s.id),other=snakeRecordedOtherCosts(s.id),total=purchase+food+other,sale=snakeSaleAmount(s),profit=sale-total;return `<div class="card" style="border-left:4px solid var(--accent,#22c55e)"><h3>💰 Cost & Profit</h3><div class="line"><b>Purchase / acquisition</b>${money(purchase)}</div><div class="line"><b>Food consumed</b>${money(food)}</div><div class="line"><b>Other recorded costs</b>${money(other)}</div><div class="line"><b>Total recorded cost</b>${money(total)}</div><div class="line"><b>Sale value</b>${money(sale)}</div><div class="line"><b>Estimated profit</b>${money(profit)}</div><div class="bp-small">Food cost is calculated from feeder purchase batches used by this snake. Other costs are included only when an expense is linked to this snake.</div></div>`;}
+
 function animalDetail(id) {
   const s = db.snakes.find(x => x.id === id);
   if (!s) return;
@@ -3690,12 +3792,15 @@ function animalDetail(id) {
       <button class="danger" onclick="deleteAnimal('${s.id}')">Delete</button>
     </div>
 
+    ${renderSnakeCostProfit(s)}
+
     <div class="card">
       <div class="line"><b>Genes / Morph</b>${esc(s.genes || 'Not recorded')}</div>
       <div class="line"><b>Het / Possible Het</b>${esc(s.hets || 'None')}</div>
       <div class="line"><b>Weight</b>${s.weight ? esc(s.weight) + ' g' : 'Not recorded'}${weightSpark(s.id)}</div>
       <div class="line"><b>Date of Birth</b>${esc(s.dob || 'Not recorded')}</div>
       <div class="line"><b>Feed interval</b>${s.feedDays || 14} days</div>
+      <div class="line"><b>Purchase / acquisition cost</b>${s.acquisitionCost ? money(s.acquisitionCost) : 'Not recorded'}</div>
       <div class="line"><b>Sale price</b>${esc(s.price || 'Not set')}</div>
       <div class="line"><b>Parents</b>Sire: ${esc(sire?.name || 'Unknown')} · Dam: ${esc(dam?.name || 'Unknown')}</div>
       <div class="line"><b>Notes</b>${esc(s.notes || 'None')}</div>
@@ -4147,14 +4252,14 @@ $('cf').onsubmit = e => {
     if (old.type === 'feed') restoreFeederToStock(old);
     if (rec.type === 'feed') {
       const parsed = deductFeederFromStock(rec.value);
-      if (parsed.ok) { rec.stockKey=parsed.item.key; rec.stockDeducted=parsed.parsed.qty; rec.stockType=parsed.parsed.type; rec.stockSize=parsed.parsed.size; rec.stockWeight=parsed.item.weight||''; }
+      if (parsed.ok) { rec.stockCost=parsed.cost; rec.stockBatches=parsed.used; rec.stockDeducted=parsed.parsed.qty; rec.stockType=parsed.parsed.type; rec.stockSize=parsed.parsed.size; }
       else setTimeout(()=>alert(feedStockWarning(parsed)),0);
     }
     db.care[idx] = rec;
   } else {
     if (rec.type === 'feed') {
       const parsed = deductFeederFromStock(rec.value);
-      if (parsed.ok) { rec.stockKey=parsed.item.key; rec.stockDeducted=parsed.parsed.qty; rec.stockType=parsed.parsed.type; rec.stockSize=parsed.parsed.size; rec.stockWeight=parsed.item.weight||''; }
+      if (parsed.ok) { rec.stockCost=parsed.cost; rec.stockBatches=parsed.used; rec.stockDeducted=parsed.parsed.qty; rec.stockType=parsed.parsed.type; rec.stockSize=parsed.parsed.size; }
       else setTimeout(()=>alert(feedStockWarning(parsed)),0);
     }
     db.care.unshift(rec);
@@ -5604,12 +5709,13 @@ function addSale() {
     ['amount', t('amount'),'number']
   ], v => {
     ensureArrays();
-    db.sales.push({...v, date: new Date().toISOString().slice(0,10)});
+    const linkedSnake = db.snakes.find(sn => sn.id === v.animal || sn.name === v.animal);
+    db.sales.push({...v, snakeId: linkedSnake?.id || '', date: new Date().toISOString().slice(0,10)});
     save(); renderSales();
   });
 }
 function addExpense() {
-  formPrompt(t('add_expense'), [['desc', t('description')],['amount', t('amount'),'number']],
+  formPrompt(t('add_expense'), [['desc', t('description')],['amount', t('amount'),'number'],['snakeId','Snake ID (optional)']],
     v => {
       ensureArrays();
       db.expenses.push({...v, date: new Date().toISOString().slice(0,10)});
