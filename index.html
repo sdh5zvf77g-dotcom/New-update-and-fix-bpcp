@@ -3789,6 +3789,92 @@ function snakeRecordedOtherCosts(snakeId){return db.expenses.filter(x=>x.snakeId
 function snakeSaleAmount(s){const linked=(db.sales||[]).find(x=>x.snakeId===s.id);if(linked)return Number(linked.amount||0);const n=String(s.price||'').replace(/[^0-9.]/g,'');return Number(n)||0;}
 function renderSnakeCostProfit(s){const purchase=Number(s.acquisitionCost||0),food=snakeFoodCost(s.id),other=snakeRecordedOtherCosts(s.id),total=purchase+food+other,sale=snakeSaleAmount(s),profit=sale-total;return `<div class="card" style="border-left:4px solid var(--accent,#22c55e)"><h3>💰 Cost & Profit</h3><div class="line"><b>Purchase / acquisition</b>${money(purchase)}</div><div class="line"><b>Food consumed</b>${money(food)}</div><div class="line"><b>Other recorded costs</b>${money(other)}</div><div class="line"><b>Total recorded cost</b>${money(total)}</div><div class="line"><b>Sale value</b>${money(sale)}</div><div class="line"><b>Estimated profit</b>${money(profit)}</div><div class="bp-small">Food cost is calculated from feeder purchase batches used by this snake. Other costs are included only when an expense is linked to this snake.</div></div>`;}
 
+function isSuccessfulFeed(rec) {
+  if (!rec || rec.type !== 'feed') return false;
+  const blob = `${rec.result || ''} ${rec.value || ''} ${rec.notes || ''}`.toLowerCase();
+  // Count as success unless clearly refused / regurg / missed
+  if (/\b(refuse|refused|regurg|regurgitated|missed|no\s*eat|didn't\s*eat|did not eat)\b/.test(blob)) return false;
+  return true;
+}
+
+function getNeonatalStatus(snakeId) {
+  const s = db.snakes.find(x => x.id === snakeId);
+  if (!s) return null;
+  const weight = Number(s.weight) || 0;
+  const weightLogs = db.care.filter(c => c.snakeId === snakeId && c.type === 'weight' && Number(c.value) > 0)
+    .map(c => Number(c.value));
+  const maxWeight = Math.max(weight, ...weightLogs, 0);
+  const bypass = maxWeight > 300;
+
+  const sheds = db.care.filter(c => c.snakeId === snakeId && c.type === 'shed')
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const firstShed = sheds[0] || null;
+  const hasFirstShed = !!firstShed;
+
+  const feeds = db.care.filter(c => c.snakeId === snakeId && c.type === 'feed')
+    .sort((a, b) => a.date.localeCompare(b.date));
+  // Current streak from most recent backwards
+  let streak = 0;
+  for (let i = feeds.length - 1; i >= 0; i--) {
+    if (isSuccessfulFeed(feeds[i])) streak++;
+    else break;
+  }
+  // Best consecutive successful feeds ever (for benchmark progress)
+  let best = 0, run = 0;
+  for (const f of feeds) {
+    if (isSuccessfulFeed(f)) { run++; best = Math.max(best, run); }
+    else run = 0;
+  }
+  const consecOk = Math.max(streak, Math.min(best, 3));
+  const has3Feeds = best >= 3 || streak >= 3;
+  const saleReady = bypass || (hasFirstShed && has3Feeds);
+
+  return {
+    bypass, weight: maxWeight,
+    hasFirstShed, firstShed,
+    streak, best, consecProgress: Math.min(3, Math.max(streak, Math.min(best, 3))),
+    has3Feeds, saleReady
+  };
+}
+
+function renderNeonatalCard(s) {
+  const n = getNeonatalStatus(s.id);
+  if (!n) return '';
+  if (n.bypass) {
+    return `<div class="card" style="border-color:rgba(34,197,94,.35);background:var(--accent-soft)">
+      <h3 style="margin:0 0 6px">Neonatal benchmarks</h3>
+      <p class="muted" style="margin:0 0 10px;color:var(--text2)">Weight over 300 g — neonatal checklist auto-bypassed.</p>
+      <div class="notice ok" style="margin:0">✓ Sale-ready by weight (${Math.round(n.weight)} g)</div>
+    </div>`;
+  }
+  const shedLine = n.hasFirstShed
+    ? `✓ First shed recorded${n.firstShed?.date ? ' · ' + n.firstShed.date : ''}`
+    : '○ Not recorded yet';
+  const feedLine = n.has3Feeds
+    ? `✓ 3 consecutive successful feeds`
+    : `○ ${n.consecProgress} / 3 consecutive successful`;
+  const streakLine = n.streak > 0
+    ? `${n.streak} successful in a row`
+    : 'No current streak';
+  const status = n.saleReady
+    ? `<div class="notice ok" style="margin:10px 0 0">✓ Sale-ready benchmarks met.</div>`
+    : `<div class="notice" style="margin:10px 0 0">Still working toward sale-ready benchmarks.</div>`;
+  return `<div class="card" style="border-color:rgba(245,158,11,.4)">
+    <h3 style="margin:0 0 6px">Neonatal benchmarks</h3>
+    <p class="muted" style="margin:0 0 12px;color:var(--text2);font-size:13px;line-height:1.4">
+      First shed + 3 consecutive successful meals — common checklist before selling hatchlings. Automatically skipped when weight is over 300 g.
+    </p>
+    <div class="line"><b>First shed</b>${shedLine}</div>
+    <div class="line"><b>3 consecutive feeds</b>${feedLine}</div>
+    <div class="line"><b>Current feed streak</b>${streakLine}</div>
+    ${status}
+    <div class="actions" style="margin:12px 0 0">
+      <button class="small" onclick="setCareSnake('${s.id}');logCare('shed')">＋ Log shed</button>
+      <button class="small primary" onclick="setCareSnake('${s.id}');logCare('feed')">＋ Log feed</button>
+    </div>
+  </div>`;
+}
+
 function animalDetail(id) {
   const s = db.snakes.find(x => x.id === id);
   if (!s) return;
@@ -3797,13 +3883,17 @@ function animalDetail(id) {
   const records = db.care.filter(c => c.snakeId === id).sort((a,b) => b.date.localeCompare(a.date)).slice(0, 12);
   const kids = db.snakes.filter(x => x.sire === id || x.dam === id);
   const photos = Array.isArray(s.photos) ? s.photos : (s.photo ? [s.photo] : []);
+  const neo = getNeonatalStatus(id);
+  const readyBadge = neo?.saleReady
+    ? `<span class="badge ok" style="margin-left:6px">Sale-ready</span>`
+    : (neo && !neo.bypass ? `<span class="badge warn" style="margin-left:6px">Growing</span>` : '');
 
   $('animalDetailBody').innerHTML = `
     ${photos.length ? `
       <div style="display:flex;gap:8px;overflow-x:auto;margin-bottom:12px;-webkit-overflow-scrolling:touch">
         ${photos.map(p => `<img class="detail-photo" src="${p}" style="max-width:85%;flex:none;margin:0">`).join('')}
       </div>` : ''}
-    <h2>${esc(s.name)}</h2>
+    <h2>${esc(s.name)}${readyBadge}</h2>
     <div class="meta" style="margin-bottom:12px">${tSex(s.sex)} · ${esc(tStatus(s.status || 'Holdback'))} ${s.location ? '· ' + esc(s.location) : ''}</div>
     
     <div class="quick-actions">
@@ -3817,6 +3907,8 @@ function animalDetail(id) {
       <button onclick="printSnakeHistory('${s.id}')">🖨️ Print History</button>
       <button class="danger" onclick="deleteAnimal('${s.id}')">Delete</button>
     </div>
+
+    ${renderNeonatalCard(s)}
 
     ${renderSnakeCostProfit(s)}
 
@@ -4157,14 +4249,20 @@ async function startQRCamera() {
 function showQR(id) {
   const s = db.snakes.find(x => x.id === id);
   if (!s) return;
-  const text = 'BPPRO|' + s.id + '|' + (s.name || '') + '|' + (s.genes || '');
+  const genes = (s.genes || '').trim();
+  const hets = (s.hets || '').trim();
+  const morphLine = [genes, hets ? ('Het: ' + hets) : ''].filter(Boolean).join(' · ') || '—';
+  // Payload includes genes so scans can still match / show morph
+  const text = 'BPPRO|' + s.id + '|' + (s.name || '') + '|' + genes + (hets ? ('|' + hets) : '');
   const overlay = document.createElement('div');
   overlay.className = 'overlay';
   overlay.innerHTML = `
     <div class="sheet" style="text-align:center">
       <h2>QR Label</h2>
-      <p class="muted">${esc(s.name)}</p>
+      <p style="margin:4px 0 2px;font-size:18px;font-weight:800">${esc(s.name || 'Snake')}</p>
+      <p class="muted" style="margin:0 0 8px;font-size:12px">${esc(s.sex || '')}${s.sex && s.status ? ' · ' : ''}${esc(s.status || '')}${s.location ? ' · ' + esc(s.location) : ''}</p>
       <canvas id="qrcanvas" style="margin:12px auto;background:#fff;border-radius:12px;max-width:100%"></canvas>
+      <p style="margin:10px 0 2px;font-size:15px;font-weight:750;color:var(--accent);line-height:1.35">${esc(morphLine)}</p>
       <p class="muted" style="font-size:12px;margin-top:8px">Screenshot for tub labels. Scan inside the app (Snakes → Scan QR) to open this snake.</p>
       <div class="actions" style="margin-top:14px">
         <button class="ghost" onclick="this.closest('.overlay').remove()">Close</button>
