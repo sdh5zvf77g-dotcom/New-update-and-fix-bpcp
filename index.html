@@ -3602,20 +3602,33 @@ function lastCare(snakeId, type) {
     .sort((a,b) => b.date.localeCompare(a.date))[0];
 }
 
+function formatSnakePrice(s) {
+  // Prefer numeric amount (sale record or digits in price field) so currency switch updates display
+  const amt = typeof snakeSaleAmount === 'function' ? snakeSaleAmount(s) : 0;
+  if (amt > 0) return money(amt);
+  const raw = String(s.price || '').trim();
+  if (!raw) return '';
+  const n = Number(String(raw).replace(/[^0-9.]/g, ''));
+  if (n > 0) return money(n);
+  return raw; // non-numeric free text
+}
+
 function animalCard(s) {
   const lastFeed = lastCare(s.id, 'feed');
   const lastW = lastCare(s.id, 'weight');
   const statusClass = s.status === 'For Sale' ? 'sale' : s.status === 'Sold' ? 'sold' : '';
+  const priceLabel = formatSnakePrice(s);
   return `<div class="animal" onclick="animalDetail('${s.id}')">
     <img class="thumb" src="${(s.photos && s.photos[0]) || s.photo || placeholder()}" alt="">
     <div class="grow">
       <h3>${esc(s.name || 'Unnamed')}</h3>
-      <div class="meta">${tSex(s.sex) || '—'} ${s.weight ? '· ' + esc(s.weight) + 'g' : ''} ${s.location ? '· ' + esc(s.location) : ''}</div>
+      <div class="meta">${tSex(s.sex) || '—'} ${s.weight ? '· ' + esc(s.weight) + 'g' : ''} ${s.location ? '· ' + esc(s.location) : ''}${priceLabel ? ' · <span style="color:var(--accent);font-weight:700">' + esc(priceLabel) + '</span>' : ''}</div>
       <div class="genes">${esc(s.genes || '')}</div>
       <div class="tags">
         ${s.status ? `<span class="tag status ${statusClass}">${esc(tStatus(s.status))}</span>` : ''}
         ${s.hets ? `<span class="tag het">${esc(s.hets)}</span>` : ''}
         ${lastFeed ? `<span class="tag">${t('fed')} ${lastFeed.date}</span>` : ''}
+        ${priceLabel ? `<span class="tag" style="background:var(--accent-soft);color:#86efac">${esc(priceLabel)}</span>` : ''}
       </div>
     </div>
   </div>`;
@@ -4068,6 +4081,7 @@ function renderNeonatalCard(s) {
 function animalDetail(id) {
   const s = db.snakes.find(x => x.id === id);
   if (!s) return;
+  window._lastAnimalId = id;
   const sire = db.snakes.find(x => x.id === s.sire);
   const dam = db.snakes.find(x => x.id === s.dam);
   const records = db.care.filter(c => c.snakeId === id).sort((a,b) => b.date.localeCompare(a.date)).slice(0, 12);
@@ -4109,7 +4123,7 @@ function animalDetail(id) {
       <div class="line"><b>Date of Birth</b>${esc(s.dob || 'Not recorded')}</div>
       <div class="line"><b>Feed interval</b>${s.feedDays || 14} days</div>
       <div class="line"><b>Purchase / acquisition cost</b>${s.acquisitionCost ? money(s.acquisitionCost) : 'Not recorded'}</div>
-      <div class="line"><b>Sale price</b>${esc(s.price || 'Not set')}</div>
+      <div class="line"><b>Sale price</b>${formatSnakePrice(s) || esc(s.price || 'Not set')}</div>
       <div class="line"><b>Parents</b>Sire: ${esc(sire?.name || 'Unknown')} · Dam: ${esc(dam?.name || 'Unknown')}</div>
       <div class="line"><b>Notes</b>${esc(s.notes || 'None')}</div>
     </div>
@@ -5848,11 +5862,25 @@ function setCurrency(code) {
   db.settings.currency = code || 'USD';
   save();
   applyCurrency();
-  // Re-render views that show money so amounts update immediately
+  // Re-render every money surface: dashboard, sales, reports, snakes list, open detail
+  try {
+    if (typeof dash === 'function') dash();
+    if (typeof renderAnimals === 'function') renderAnimals();
+    if (typeof renderSales === 'function') renderSales();
+    if (typeof renderReports === 'function') renderReports();
+    if (typeof renderProjects === 'function') renderProjects();
+    const detail = document.getElementById('animalDetail');
+    if (detail && detail.classList.contains('active')) {
+      const nameEl = detail.querySelector('h2');
+      // Re-open current snake if we can find id from a global or last viewed
+      if (window._lastAnimalId && typeof animalDetail === 'function') animalDetail(window._lastAnimalId);
+    }
+  } catch (e) {}
   const active = document.querySelector('.view.active');
-  if (active && active.id) show(active.id);
+  if (active && active.id && active.id !== 'animalDetail' && typeof show === 'function') {
+    // refresh active view renderers already called above
+  }
   if (prev !== db.settings.currency) {
-    // light feedback without blocking
     try {
       const tip = document.createElement('div');
       tip.className = 'notice ok';
