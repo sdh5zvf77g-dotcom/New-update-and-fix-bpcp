@@ -3401,8 +3401,6 @@ function dash() {
     .map((x, i) => ({ ...x, _i: i }))
     .filter(x => !x.done && x.due && x.due <= todayStr);
 
-  const needWeightList = active.filter(s => !s.weight && !db.care.some(c => c.snakeId === s.id && c.type === 'weight'));
-  const noWeight = needWeightList.length;
   function feedDueInfo(s) {
     const interval = Number(s.feedDays) || 14;
     const last = db.care.filter(c => c.snakeId === s.id && c.type === 'feed').sort((a,b) => b.date.localeCompare(a.date))[0];
@@ -3412,6 +3410,11 @@ function dash() {
   }
   const feedDueList = active.map(s => ({ s, info: feedDueInfo(s) })).filter(x => x.info.due);
   const overdueFeed = feedDueList.length;
+
+  // Weight due: every 6 months, or monthly after 4 missed feeds in a row
+  const needWeightList = active.map(s => ({ s, w: getWeightDueInfo(s) })).filter(x => x.w.due);
+  const noWeight = needWeightList.length;
+  const monthlyWeightWatch = needWeightList.filter(x => x.w.monthlyWatch).length;
 
   // Due tasks = care actions + manual tasks (matches what needs doing)
   const dueTasks = dueTaskList.length + noWeight + overdueFeed;
@@ -3451,7 +3454,16 @@ function dash() {
 
   // Action needed box (tappable → goes to the right place)
   const actionItems = [];
-  if (noWeight) actionItems.push({ kind:'weight', ico:'⚖️', text: t('no_weight_alert').replace('{n}', String(noWeight)) });
+  if (noWeight) {
+    const extra = monthlyWeightWatch
+      ? ` (${monthlyWeightWatch} on monthly watch after 4 missed feeds)`
+      : ' (every 6 months)';
+    actionItems.push({
+      kind: 'weight',
+      ico: '⚖️',
+      text: `${noWeight} snake(s) due for a weight check${extra}.`
+    });
+  }
   if (overdueFeed) actionItems.push({ kind:'feed', ico:'🍽️', text: t('overdue_feed_alert').replace('{n}', String(overdueFeed)) });
   if (dueTaskList.length) actionItems.push({ kind:'tasks', ico:'📋', text: `${dueTaskList.length} ${t('due_tasks').toLowerCase()}` });
   if (dueToday.length) actionItems.push({ kind:'hatch', ico:'🔔', text: `${dueToday.length} clutch(es) expected to hatch today` });
@@ -3500,10 +3512,14 @@ function dash() {
         <button type="button" class="dash-collapse-btn" onclick="toggleDashSection('needWeight')">−</button>
       </div>
       <div class="dash-body">
-      ${needWeightList.slice(0,15).map(s => `
+      ${needWeightList.slice(0,20).map(({s, w}) => `
         <div class="line" onclick="animalDetail('${s.id}')" style="cursor:pointer">
           <b>${esc(s.name)}</b>
-          <span class="muted">${esc(s.sex||'')} · ${esc(s.location||'')}</span>
+          <span class="muted">${esc(s.sex||'')} · ${
+            w.reason === 'never' ? 'never weighed'
+            : w.monthlyWatch ? `monthly watch · ${w.missed} missed feeds · last ${w.last || '—'}`
+            : `every 6 mo · last ${w.last || '—'}`
+          }</span>
           <button class="small" style="margin-left:8px" onclick="event.stopPropagation();setCareSnake('${s.id}');logCare('weight')">⚖️ Weight</button>
         </div>`).join('')}
         <div class="actions" style="margin-top:8px">
@@ -3797,6 +3813,111 @@ function isSuccessfulFeed(rec) {
   return true;
 }
 
+function getMissedFeedStreak(snakeId) {
+  const feeds = (db.care || [])
+    .filter(c => c.snakeId === snakeId && c.type === 'feed')
+    .sort((a, b) => b.date.localeCompare(a.date));
+  let miss = 0;
+  for (const f of feeds) {
+    if (isSuccessfulFeed(f)) break;
+    miss++;
+  }
+  return miss;
+}
+
+/** Last weight date from care logs or snake.weightDate / updated fields */
+function getLastWeightDate(s) {
+  const logs = (db.care || [])
+    .filter(c => c.snakeId === s.id && c.type === 'weight')
+    .sort((a, b) => b.date.localeCompare(a.date));
+  if (logs[0]?.date) return logs[0].date.slice(0, 10);
+  if (s.weightDate) return String(s.weightDate).slice(0, 10);
+  // Has a weight on file but no date → treat as unknown / due
+  return null;
+}
+
+/**
+ * Weight schedule:
+ * - Default: every 6 months (≈182 days)
+ * - If 4+ consecutive missed feeds: every 1 month (30 days) until a successful feed
+ * - Never weighed: due immediately
+ */
+function getWeightDueInfo(s) {
+  const todayStr = today();
+  const missed = getMissedFeedStreak(s.id);
+  const monthlyWatch = missed >= 4;
+  const intervalDays = monthlyWatch ? 30 : 182;
+  const last = getLastWeightDate(s);
+  const hasWeightValue = !!(s.weight || (db.care || []).some(c => c.snakeId === s.id && c.type === 'weight' && c.value));
+  if (!last && !hasWeightValue) {
+    return { due: true, reason: 'never', intervalDays, monthlyWatch, missed, last: null, daysSince: 9999 };
+  }
+  if (!last && hasWeightValue) {
+    // Weight recorded without date — still schedule from "unknown"; flag as due for a dated check
+    return { due: true, reason: 'no_date', intervalDays, monthlyWatch, missed, last: null, daysSince: 9999 };
+  }
+  const daysSince = daysBetween(last, todayStr);
+  return {
+    due: daysSince >= intervalDays,
+    reason: monthlyWatch ? 'monthly_after_misses' : 'routine_6mo',
+    intervalDays,
+    monthlyWatch,
+    missed,
+    last,
+    daysSince
+  };
+}
+
+function countOpenAlerts() {
+  try {
+    ensureArrays();
+    const active = (db.snakes || []).filter(s => s.status !== 'Sold');
+    const todayStr = today();
+    const dueTasks = (db.tasks || []).filter(x => !x.done && x.due && x.due <= todayStr).length;
+    let weightDue = 0, feedDue = 0;
+    for (const s of active) {
+      if (getWeightDueInfo(s).due) weightDue++;
+      const interval = Number(s.feedDays) || 14;
+      const last = (db.care || []).filter(c => c.snakeId === s.id && c.type === 'feed').sort((a,b) => b.date.localeCompare(a.date))[0];
+      if (!last || daysBetween(last.date, todayStr) >= interval) feedDue++;
+    }
+    return { total: dueTasks + weightDue + feedDue, dueTasks, weightDue, feedDue };
+  } catch (e) {
+    return { total: 0, dueTasks: 0, weightDue: 0, feedDue: 0 };
+  }
+}
+
+/** Short double-beep when alerts exist (Web Audio — no external files) */
+function playAlertBeep() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = playAlertBeep._ctx || (playAlertBeep._ctx = new Ctx());
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    const beep = (t0, freq) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.value = freq;
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.22, t0 + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.18);
+      o.connect(g);
+      g.connect(ctx.destination);
+      o.start(t0);
+      o.stop(t0 + 0.2);
+    };
+    const now = ctx.currentTime;
+    beep(now, 880);
+    beep(now + 0.22, 880);
+  } catch (e) {}
+}
+
+function maybePlayAlertBeep() {
+  const c = countOpenAlerts();
+  if (c.total > 0) playAlertBeep();
+}
+
 function getNeonatalStatus(snakeId) {
   const s = db.snakes.find(x => x.id === snakeId);
   if (!s) return null;
@@ -3915,7 +4036,7 @@ function animalDetail(id) {
     <div class="card">
       <div class="line"><b>Genes / Morph</b>${esc(s.genes || 'Not recorded')}</div>
       <div class="line"><b>Het / Possible Het</b>${esc(s.hets || 'None')}</div>
-      <div class="line"><b>Weight</b>${s.weight ? esc(s.weight) + ' g' : 'Not recorded'}${weightSpark(s.id)}</div>
+      <div class="line"><b>Weight</b>${s.weight ? esc(s.weight) + ' g' : 'Not recorded'}${weightSpark(s.id)}${(() => { const w = getWeightDueInfo(s); if (!w) return ''; if (w.monthlyWatch) return '<div class="muted" style="margin-top:4px">⚠️ Monthly weigh schedule (' + w.missed + ' missed feeds in a row). Due every 30 days until a successful feed.</div>'; if (w.due) return '<div class="muted" style="margin-top:4px">⚖️ Weight check due (every 6 months' + (w.last ? ' · last ' + w.last : '') + ')</div>'; return w.last ? '<div class="muted" style="margin-top:4px">Next routine weigh ~6 months after ' + w.last + '</div>' : ''; })()}</div>
       <div class="line"><b>Date of Birth</b>${esc(s.dob || 'Not recorded')}</div>
       <div class="line"><b>Feed interval</b>${s.feedDays || 14} days</div>
       <div class="line"><b>Purchase / acquisition cost</b>${s.acquisitionCost ? money(s.acquisitionCost) : 'Not recorded'}</div>
@@ -5917,7 +6038,7 @@ function updateGettingStarted() {
 }
 
 // Init — wait for storage to load first
-_ready.then(() => {
+function finishInit() {
   ensureArrays();
   show('dashboard');
   applyLanguage();
@@ -5926,14 +6047,18 @@ _ready.then(() => {
   if (typeof updateGettingStarted === 'function') updateGettingStarted();
   const sel = document.getElementById('langSelect');
   if (sel) sel.value = (db.settings && db.settings.lang) || 'en';
-}).catch(() => {
-  ensureArrays();
-  show('dashboard');
-  applyLanguage();
-  if (typeof applyBusinessName === 'function') applyBusinessName();
-  if (typeof applyCurrency === 'function') applyCurrency();
-  if (typeof updateGettingStarted === 'function') updateGettingStarted();
-});
+  // Beep when opening the app if feed / weight / tasks still need doing
+  setTimeout(() => {
+    if (typeof maybePlayAlertBeep === 'function') maybePlayAlertBeep();
+  }, 600);
+  // Also beep when returning to the tab with open alerts
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && typeof maybePlayAlertBeep === 'function') {
+      maybePlayAlertBeep();
+    }
+  });
+}
+_ready.then(finishInit).catch(finishInit);
 </script>
 </body>
 </html>
